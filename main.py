@@ -39,13 +39,10 @@ class Translator:
         :param text_to_translate:
         :return:
         '''
+        deb = self.file_code + "-" + str(self.count) + " "
+        print(deb)
         self.count += 1
-        return (self.file_code +
-                "@" +
-                str(self.count) +
-                " " +
-                argostranslate.translate.translate(text_to_translate, self.from_code, self.to_code)
-                )
+        return deb + argostranslate.translate.translate(text_to_translate, self.from_code, self.to_code)
 
 
 class Phrase:
@@ -61,11 +58,12 @@ class Phrase:
             self.is_system = True
             self.speech = line[5:-2]
         elif line[:3] == '# "':
-            if line[3:-2].find('"') == -1:# or line[3:-2].find('"') != line[3:-2].find('\\"'):
+            if line[3:-2].find('"') == -1:
                 self.speaker = None
-                self.speech = line[1:-2]
+                self.speech = line[2:-2]
                 self.is_system = False
             else:
+                # спикер нужно рендерить репром
                 line = line[2:]
                 line.find('"',1)
                 self.speaker = line[:line.find('"',1)+1]
@@ -74,11 +72,18 @@ class Phrase:
         else:
             line = line[2:]
             self.speaker, self.speech = line.split(" ", 1)
-            self.speech = self.speech[1:-1]
+            self.speech = self.speech[1:-2]
             self.is_system = False
 
     def __str__(self):
         return f"-\nspeaker: {self.speaker} \nspeech: {self.speech} \nafter: {self.after}"
+
+    def __eq__(self, other):
+        return (
+            self.speech == other.speech and
+            self.after == other.after and
+            self.speaker == other.speaker
+        )
 
 
 class Block:
@@ -124,10 +129,7 @@ class File:
                 i.new_line += "new "
             elif i.old_line.speaker is not None:
                 i.new_line += i.old_line.speaker + " "
-            i.new_line += '"'
-            i.new_line += self.tr(i.old_line.speech)
-            # print(i.old_line)
-            i.new_line += '"'
+            i.new_line += self.tr(i.old_line.speech).__repr__()
             i.new_line += i.old_line.after
             i.new_line += '\n'
 
@@ -138,7 +140,23 @@ class File:
                 result.append(j)
             result.append(i.new_line)
             result.append("\n")
+            for k in i.repeats:
+                for j in k.before_lines:
+                    result.append(j)
+                result.append(i.new_line)
+                result.append("\n")
         return result
+
+    def optimize(self):
+        i = 0
+        while i < len(self.blocks)-1:
+            j = i + 1
+            while j < len(self.blocks):
+                if self.blocks[i].old_line == self.blocks[j].old_line:
+                    self.blocks[i].append_repeat(self.blocks.pop(j))
+                else:
+                    j += 1
+            i += 1
 
 
 def get_rpy_files(top=".", quiet = False):
@@ -164,11 +182,9 @@ def write_file(file: str, lines):
         f.writelines(lines)
 
 
-def placeholertranslate(s: str):
-    return ""
-
-
 def test_file(file):
+    def placeholertranslate(s: str):
+        return ""
     test = read_file(file)
     f = File(test, placeholertranslate)
     f.translate()
@@ -203,9 +219,11 @@ def test_piece_of_file(file, begin, end):
 
 
 if __name__ == '__main__':
-    # test_all_files()
-    translator = Translator("en", "ru", "common.rpy")
-    f = File(read_file("common.rpy"), translator.translate)
-    f.translate()
-    lines = f.get_lines()
-    write_file("common.rpy", lines)
+    for i in get_rpy_files():
+        translator = Translator("en", "ru", i)
+        f = File(read_file(i), translator.translate)
+        f.optimize()
+        f.translate()
+        lines = f.get_lines()
+        write_file(i, lines)
+
